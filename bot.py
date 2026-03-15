@@ -1,21 +1,25 @@
 import requests
 import time
+import os
 
 print("BOT DOCKER PARTITO")
-TOKEN = "1292804066:AAHIGsAOWz3vBXF4RJBnnQGH9m2UgNfJhek"
-CHAT_ID = "178689360"
+
+TOKEN = os.getenv("1292804066:AAHIGsAOWz3vBXF4RJBnnQGH9m2UgNfJhek")
+CHAT_ID = os.getenv("178689360")
+
+url = "https://api.sofascore.com/api/v1/sport/football/events/live"
 
 def send(msg):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-
-print("BOT PARTITO")
-send("⚽ Asian Scanner LIVE attivo")
+    telegram_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    data = {
+        "chat_id": CHAT_ID,
+        "text": msg
+    }
+    requests.post(telegram_url, data=data)
 
 while True:
     try:
 
-        url = "https://api.sofascore.com/api/v1/sport/football/events/live"
         r = requests.get(url)
         data = r.json()
 
@@ -25,7 +29,7 @@ while True:
 
             league = e["tournament"]["name"]
 
-            if "U18" in league or "U19" in league or "U20" in league:
+            if "U18" in league or "U19" in league:
                 continue
 
             home = e["homeTeam"]["name"]
@@ -38,7 +42,7 @@ while True:
 
             if home_score == 0 and away_score == 0 and minute >= 21:
 
-    msg = f"""
+                msg = f"""
 ⚽ MATCH TROVATO
 
 {home} vs {away}
@@ -50,18 +54,6 @@ League: {league}
 Minute: {minute}
 """
 
-    send(msg)
-
-                msg = f"""
-⚽ MATCH TROVATO
-
-{home} vs {away}
-
-Score: {home_score}-{away_score}
-
-League: {league}
-"""
-
                 send(msg)
 
         time.sleep(60)
@@ -69,4 +61,3 @@ League: {league}
     except Exception as e:
         print(e)
         time.sleep(60)
-print("docker deploy")
