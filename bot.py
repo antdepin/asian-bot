@@ -2,6 +2,8 @@ import requests
 import time
 import os
 
+sent_matches = set()
+
 print("BOT DOCKER PARTITO")
 
 TOKEN = os.getenv("1292804066:AAHIGsAOWz3vBXF4RJBnnQGH9m2UgNfJhek")
@@ -40,7 +42,10 @@ while True:
             home_score = e["homeScore"]["current"]
             away_score = e["awayScore"]["current"]
 
-            if home_score == 0 and away_score == 0 and minute >= 21:
+match_id = e["id"]
+
+if home_score == 0 and away_score == 0 and minute >= 21 and match_id not in sent_matches:
+          
 
                 msg = f"""
 ⚽ MATCH TROVATO
@@ -55,6 +60,7 @@ Minute: {minute}
 """
 
                 send(msg)
+sent_matches.add(match_id)
 
         time.sleep(60)
 
