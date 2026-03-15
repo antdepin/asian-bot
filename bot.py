@@ -1,26 +1,26 @@
 import requests
 import time
-import os
-
-sent_matches = set()
 
 print("BOT DOCKER PARTITO")
 
-TOKEN = os.getenv("1292804066:AAHIGsAOWz3vBXF4RJBnnQGH9m2UgNfJhek")
-CHAT_ID = os.getenv("178689360")
+TOKEN = "1292804066:AAHIGsAOWz3vBXF4RJBnnQGH9m2UgNfJhek"
+CHAT_ID = "178689360"
 
-url = "https://api.sofascore.com/api/v1/sport/football/events/live"
+sent_matches = set()
 
 def send(msg):
-    telegram_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    data = {
-        "chat_id": CHAT_ID,
-        "text": msg
-    }
-    requests.post(telegram_url, data=data)
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+
+print("BOT PARTITO")
+
+send("⚽ Asian Scanner LIVE attivo")
 
 while True:
+
     try:
+
+        url = "https://api.sofascore.com/api/v1/sport/football/events/live"
 
         r = requests.get(url)
         data = r.json()
@@ -31,21 +31,23 @@ while True:
 
             league = e["tournament"]["name"]
 
-            if "U18" in league or "U19" in league:
+            if "U18" in league or "U19" in league or "U20" in league:
                 continue
 
             home = e["homeTeam"]["name"]
             away = e["awayTeam"]["name"]
 
-            minute = e.get("time", {}).get("minute", 0)
+            minute = e.get("time", {}).get("currentPeriodStartTimestamp", 0)
 
             home_score = e["homeScore"]["current"]
             away_score = e["awayScore"]["current"]
 
-match_id = e["id"]
+            match_id = e["id"]
 
-if home_score == 0 and away_score == 0 and minute >= 21 and match_id not in sent_matches:
-          
+            if match_id in sent_matches:
+                continue
+
+            if home_score == 0 and away_score == 0:
 
                 msg = f"""
 ⚽ MATCH TROVATO
@@ -55,15 +57,16 @@ if home_score == 0 and away_score == 0 and minute >= 21 and match_id not in sent
 Score: {home_score}-{away_score}
 
 League: {league}
-
-Minute: {minute}
 """
 
                 send(msg)
-sent_matches.add(match_id)
+
+                sent_matches.add(match_id)
 
         time.sleep(60)
 
     except Exception as e:
+
         print(e)
+
         time.sleep(60)
