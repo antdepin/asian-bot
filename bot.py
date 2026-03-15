@@ -31,7 +31,7 @@ while True:
             home = e["homeTeam"]["name"]
             away = e["awayTeam"]["name"]
 
-            minute = e["time"]["currentPeriodStartTimestamp"]
+            minute = e.get("time", {}).get("minute", 0)
 
             home_score = e["homeScore"]["current"]
             away_score = e["awayScore"]["current"]
