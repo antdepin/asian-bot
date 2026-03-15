@@ -1,64 +1,45 @@
-
+import asyncio
+from playwright.async_api import async_playwright
 import requests
-import time
-from bs4 import BeautifulSoup
 
 TOKEN = "1292804066:AAHIGsAOWz3vBXF4RJBnnQGH9m2UgNfJhek"
 CHAT_ID = "178689360"
 
-BLACKLIST = ["u18","u19","u20","youth","women"]
-
-sent_matches = set()
+sent=set()
 
 def send(msg):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    url=f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url,data={"chat_id":CHAT_ID,"text":msg})
+
+
+async def scan():
+
+    async with async_playwright() as p:
+
+        browser=await p.chromium.launch(headless=True)
+        page=await browser.new_page()
+
+        await page.goto("https://www.nowgoal.com/")
+
+        while True:
+
+            rows=await page.query_selector_all("tr")
+
+            for row in rows:
+
+                text=await row.inner_text()
+
+                if "vs" in text.lower():
+
+                    if text not in sent:
+
+                        send(f"⚽ LIVE MATCH\n\n{text}")
+                        sent.add(text)
+
+            await asyncio.sleep(30)
+
 
 print("BOT PARTITO")
 send("⚽ Asian Scanner LIVE attivo")
 
-def get_matches():
-
-    url = "https://www.nowgoal.com/"
-    r = requests.get(url,timeout=20)
-
-    soup = BeautifulSoup(r.text,"html.parser")
-
-    matches=[]
-
-    rows=soup.find_all("tr")
-
-    for row in rows:
-
-        text=row.get_text(" ").lower()
-
-        if "vs" in text:
-
-            if any(word in text for word in BLACKLIST):
-                continue
-
-            matches.append(text)
-
-    return matches
-
-
-while True:
-
-    try:
-
-        matches=get_matches()
-
-        for match in matches:
-
-            if match not in sent_matches:
-
-                send(f"⚽ LIVE MATCH\n\n{match}")
-
-                sent_matches.add(match)
-
-        time.sleep(30)
-
-    except Exception as e:
-
-        print(e)
-        time.sleep(30)
+asyncio.run(scan())
