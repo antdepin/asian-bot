@@ -1,4 +1,3 @@
-
 import requests
 import time
 
@@ -15,7 +14,7 @@ def send(msg):
 
 print("BOT PARTITO")
 
-send("⚽ Scanner LIVE avviato")
+send("⚽ Scanner LIVE attivo")
 
 while True:
 
@@ -38,64 +37,17 @@ while True:
             home = e["homeTeam"]["name"]
             away = e["awayTeam"]["name"]
 
-            minute = e.get("time", {}).get("currentPeriodStartTimestamp", 0)
+            minute = e.get("time", {}).get("current", 0)
 
             home_score = e["homeScore"]["current"]
             away_score = e["awayScore"]["current"]
-
-            import requests
-import time
-
-print("BOT DOCKER PARTITO")
-
-TOKEN = "1292804066:AAHIGsAOWz3vBXF4RJBnnQGH9m2UgNfJhek"
-CHAT_ID = "178689360"
-
-sent_matches = set()
-
-def send(msg):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-
-print("BOT PARTITO")
-
-send("⚽ Scanner LIVE avviato")
-
-while True:
-
-    try:
-
-        url = "https://api.sofascore.com/api/v1/sport/football/events/live"
-
-        r = requests.get(url)
-        data = r.json()
-
-        events = data["events"]
-
-        for e in events:
-
-            league = e["tournament"]["name"]
-
-            if "U18" in league or "U19" in league or "U20" in league:
-                continue
-
-            home = e["homeTeam"]["name"]
-            away = e["awayTeam"]["name"]
-
-            minute = e.get("time", {}).get("currentPeriodStartTimestamp", 0)
-
-            home_score = e["homeScore"]["current"]
-            away_score = e["awayScore"]["current"]
-
-            red_home = e.get("homeRedCards", 0)
-            red_away = e.get("awayRedCards", 0)
 
             match_id = e["id"]
 
             if match_id in sent_matches:
                 continue
 
-            if minute >= 21 and home_score == 0 and away_score == 0 and red_home == 0 and red_away == 0:
+            if minute >= 21 and home_score == 0 and away_score == 0:
 
                 msg = f"""
 ⚽ MATCH TROVATO
@@ -117,37 +69,6 @@ League: {league}
 
     except Exception as e:
 
-        print(e)
-
-        time.sleep(60)
-
-            match_id = e["id"]
-
-            if match_id in sent_matches:
-                continue
-
-            if minute >= 21 and home_score == 0 and away_score == 0 and red_home == 0 and red_away == 0:
-
-                msg = f"""
-⚽ MATCH TROVATO
-
-{home} vs {away}
-
-Score: {home_score}-{away_score}
-
-Minuto: {minute}
-
-League: {league}
-"""
-
-                send(msg)
-
-                sent_matches.add(match_id)
-
-        time.sleep(60)
-
-    except Exception as e:
-
-        print(e)
+        print("ERRORE:", e)
 
         time.sleep(60)
