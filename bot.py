@@ -7,7 +7,7 @@ CHAT_ID = "178689360"
 
 def send(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=20)
+    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
 async def scan():
     async with async_playwright() as p:
@@ -16,7 +16,7 @@ async def scan():
 
         await page.goto("https://www.asianodds.com/en", timeout=60000)
 
-        text = await page.locator("body").inner_text()
+        text = await page.content()
 
         if "OU Points" in text:
             send("🔥 AsianOdds scanner attivo")
@@ -28,7 +28,7 @@ async def main():
         try:
             await scan()
         except Exception as e:
-            print("Errore:", e)
+            print(e)
 
         await asyncio.sleep(30)
 
