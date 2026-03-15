@@ -1,3 +1,4 @@
+
 while True:
     try:
         print("Scanner attivo")
