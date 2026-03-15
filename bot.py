@@ -1,6 +1,7 @@
 import requests
 import time
 
+print("BOT DOCKER PARTITO")
 TOKEN = "1292804066:AAHIGsAOWz3vBXF4RJBnnQGH9m2UgNfJhek"
 CHAT_ID = "178689360"
 
