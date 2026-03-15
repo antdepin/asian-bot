@@ -14,7 +14,30 @@ def send(msg):
 
 print("BOT PARTITO")
 
-send("⚽ Scanner LIVE attivo")
+send("⚽ Asian Scanner attivo")
+
+def rule_r8(tl_open, tl_current, asian_open, asian_current, over_open, over_current):
+    if tl_open >= 3 and tl_current >= tl_open:
+        if abs(asian_open) >= 1 and abs(asian_current) >= abs(asian_open):
+            if over_current < over_open:
+                return True
+    return False
+
+def rule_prob(tl_open, tl_current, asian_current, over_open, over_current):
+    if tl_current >= 2.75 and tl_current >= tl_open:
+        if abs(asian_current) >= 1:
+            return True
+        if over_current < over_open:
+            return True
+    return False
+
+def rule_r10(tl_open, tl_current, asian_current, over_open, over_current):
+    if tl_current >= 3 and tl_current >= tl_open:
+        if abs(asian_current) >= 0.75:
+            return True
+        if over_current < over_open:
+            return True
+    return False
 
 while True:
 
@@ -29,13 +52,13 @@ while True:
 
         for e in events:
 
+            home = e["homeTeam"]["name"]
+            away = e["awayTeam"]["name"]
+
             league = e["tournament"]["name"]
 
             if "U18" in league or "U19" in league or "U20" in league:
                 continue
-
-            home = e["homeTeam"]["name"]
-            away = e["awayTeam"]["name"]
 
             minute = e.get("time", {}).get("current", 0)
 
@@ -47,18 +70,40 @@ while True:
             if match_id in sent_matches:
                 continue
 
-            if minute >= 21 and home_score == 0 and away_score == 0:
+            if minute < 21:
+                continue
+
+            if home_score != 0 or away_score != 0:
+                continue
+
+            # dati odds simulati (finché non colleghiamo asianodds)
+            tl_open = 3
+            tl_current = 3.25
+            asian_open = 1
+            asian_current = 1.25
+            over_open = 2.0
+            over_current = 1.8
+
+            rule1 = rule_r8(tl_open, tl_current, asian_open, asian_current, over_open, over_current)
+            rule2 = rule_prob(tl_open, tl_current, asian_current, over_open, over_current)
+            rule3 = rule_r10(tl_open, tl_current, asian_current, over_open, over_current)
+
+            if rule1 or rule2 or rule3:
 
                 msg = f"""
-⚽ MATCH TROVATO
+🔥 ASIAN SETUP TROVATO
 
 {home} vs {away}
 
-Score: {home_score}-{away_score}
-
 Minuto: {minute}
+Score: 0-0
 
 League: {league}
+
+Regola attivata:
+R8: {rule1}
+Prob: {rule2}
+R10: {rule3}
 """
 
                 send(msg)
