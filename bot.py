@@ -36,7 +36,21 @@ while True:
             home_score = e["homeScore"]["current"]
             away_score = e["awayScore"]["current"]
 
-            if home_score == 0 and away_score == 0:
+            if home_score == 0 and away_score == 0 and minute >= 21:
+
+    msg = f"""
+⚽ MATCH TROVATO
+
+{home} vs {away}
+
+Score: {home_score}-{away_score}
+
+League: {league}
+
+Minute: {minute}
+"""
+
+    send(msg)
 
                 msg = f"""
 ⚽ MATCH TROVATO
