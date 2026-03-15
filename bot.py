@@ -1,3 +1,4 @@
+
 import requests
 import time
 
@@ -14,7 +15,7 @@ def send(msg):
 
 print("BOT PARTITO")
 
-send("⚽ Asian Scanner LIVE attivo")
+send("⚽ Scanner LIVE avviato")
 
 while True:
 
@@ -42,12 +43,15 @@ while True:
             home_score = e["homeScore"]["current"]
             away_score = e["awayScore"]["current"]
 
+            red_home = e["homeRedCards"]
+            red_away = e["awayRedCards"]
+
             match_id = e["id"]
 
             if match_id in sent_matches:
                 continue
 
-            if home_score == 0 and away_score == 0:
+            if minute >= 21 and home_score == 0 and away_score == 0 and red_home == 0 and red_away == 0:
 
                 msg = f"""
 ⚽ MATCH TROVATO
@@ -55,6 +59,8 @@ while True:
 {home} vs {away}
 
 Score: {home_score}-{away_score}
+
+Minuto: {minute}
 
 League: {league}
 """
