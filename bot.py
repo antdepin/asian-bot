@@ -2,6 +2,7 @@ import requests
 import time
 import re
 import unicodedata
+from difflib import SequenceMatcher
 from playwright.sync_api import sync_playwright
 
 print("BOT DOCKER PARTITO")
@@ -14,77 +15,98 @@ ASIANODDS_URL = "https://www.asianodds.com/en/football/live"
 
 sent_matches = set()
 
+BAD_LEAGUES = [
+"u17","u18","u19","u20","u21",
+"women","ladies","friendly",
+"youth","reserve"
+]
+
+TEAM_ALIASES = {
+"utd":"united",
+"man utd":"manchester united",
+"man united":"manchester united",
+"psg":"paris saint germain",
+"fc":"",
+"sc":"",
+"ac":"",
+"cd":""
+}
 
 def send(msg):
+
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=20)
+
+    try:
+        requests.post(url,data={"chat_id":CHAT_ID,"text":msg},timeout=20)
+    except:
+        pass
 
 
 def normalize(text):
-    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+
+    text = unicodedata.normalize("NFKD",text).encode("ascii","ignore").decode("ascii")
     text = text.lower()
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
-    text = re.sub(r"\s+", " ", text)
+
+    for old,new in TEAM_ALIASES.items():
+        text = text.replace(old,new)
+
+    text = re.sub(r"[^a-z0-9\s]"," ",text)
+    text = re.sub(r"\s+"," ",text)
+
     return text.strip()
 
 
-def short_name(name):
-    name = normalize(name)
-    words = name.split()
-    if len(words) >= 2:
-        return words[0][:4] + words[1][:4]
-    else:
-        return words[0][:6]
+def similarity(a,b):
 
-
-def team_key(home, away):
-    return short_name(home) + "-" + short_name(away)
+    return SequenceMatcher(None,a,b).ratio()
 
 
 def get_live_matches():
-    
 
-    r = requests.get(SOFASCORE_URL)
-    data = r.json()
+    matches=[]
 
-    events = data["events"]
-    matches = []
+    r=requests.get(SOFASCORE_URL)
+    data=r.json()
 
-    for e in events:
+    for e in data["events"]:
 
         try:
 
-            league = e["tournament"]["name"]
+            league=e["tournament"]["name"]
 
-            if "u17" in normalize(league) or "u19" in normalize(league) or "women" in normalize(league):
+            if any(x in normalize(league) for x in BAD_LEAGUES):
                 continue
 
-            home = e["homeTeam"]["name"]
-            away = e["awayTeam"]["name"]
+            home=e["homeTeam"]["name"]
+            away=e["awayTeam"]["name"]
 
-            minute = int(e.get("time", {}).get("current", 0))
+            minute=int(e.get("time",{}).get("current",0))
 
-            home_score = e["homeScore"]["current"]
-            away_score = e["awayScore"]["current"]
+            hs=e["homeScore"]["current"]
+            ascore=e["awayScore"]["current"]
 
-            red_home = int(e.get("homeRedCards", 0))
-            red_away = int(e.get("awayRedCards", 0))
+            red_home=int(e.get("homeRedCards",0))
+            red_away=int(e.get("awayRedCards",0))
 
             if minute < 21:
                 continue
 
-            if home_score != 0 or away_score != 0:
+            if hs!=0 or ascore!=0:
                 continue
 
-            if red_home != 0 or red_away != 0:
+            if red_home!=0 or red_away!=0:
                 continue
 
             matches.append({
-                "home": home,
-                "away": away,
-                "minute": minute,
-                "league": league,
-                "key": team_key(home, away)
+
+                "id":e["id"],
+                "home":home,
+                "away":away,
+                "league":league,
+                "minute":minute,
+                "home_n":normalize(home),
+                "away_n":normalize(away)
+
             })
 
         except:
@@ -93,56 +115,63 @@ def get_live_matches():
     return matches
 
 
-def parse_numbers(text):
-    nums = re.findall(r"-?\d+\.?\d*", text)
+def extract_numbers(text):
+
+    nums=re.findall(r"-?\d+\.?\d*",text)
+
     return [float(x) for x in nums]
 
 
-def get_asianodds():
+def get_asian():
 
-    rows = []
+    rows=[]
 
     with sync_playwright() as p:
 
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        browser=p.chromium.launch(headless=True)
+
+        page=browser.new_page()
 
         page.goto(ASIANODDS_URL)
 
         page.wait_for_timeout(8000)
 
-        body = page.locator("body").inner_text()
+        body=page.locator("body").inner_text()
 
         browser.close()
 
-    lines = body.split("\n")
+    lines=body.split("\n")
 
-    for i, line in enumerate(lines):
+    for i,line in enumerate(lines):
 
         if " vs " not in line.lower():
             continue
 
         try:
 
-            home, away = line.split(" vs ")
+            home,away=line.split(" vs ")
 
-            nums = parse_numbers(" ".join(lines[i:i+6]))
+            nums=extract_numbers(" ".join(lines[i:i+10]))
 
             if len(nums) < 6:
                 continue
 
             rows.append({
 
-                "key": team_key(home, away),
+            "home":home,
+            "away":away,
 
-                "asian_open": nums[0],
-                "asian_current": nums[1],
+            "home_n":normalize(home),
+            "away_n":normalize(away),
 
-                "tl_open": nums[2],
-                "tl_current": nums[3],
+            "asian_open":nums[0],
+            "asian_current":nums[1],
 
-                "over_open": nums[4],
-                "over_current": nums[5]
+            "tl_open":nums[2],
+            "tl_current":nums[3],
+
+            "over_open":nums[4],
+            "over_current":nums[5]
 
             })
 
@@ -152,37 +181,63 @@ def get_asianodds():
     return rows
 
 
-def rule_r8(tl_open, tl_current, asian_open, asian_current, over_open, over_current):
+def match_row(match,rows):
 
-    if tl_open >= 3 and tl_current >= tl_open:
-        if abs(asian_open) >= 1 and abs(asian_current) >= abs(asian_open):
-            if over_current < over_open:
+    best=None
+    best_score=0
+
+    for r in rows:
+
+        s1=similarity(match["home_n"],r["home_n"])
+        s2=similarity(match["away_n"],r["away_n"])
+
+        score=(s1+s2)/2
+
+        if score>best_score:
+
+            best_score=score
+            best=r
+
+    if best_score>0.7:
+        return best
+
+    return None
+
+
+def rule_r8(tl_open,tl_current,asian_open,asian_current,over_open,over_current):
+
+    if tl_open>=3 and tl_current>=tl_open:
+
+        if abs(asian_open)>=1 and abs(asian_current)>=abs(asian_open):
+
+            if over_current<over_open:
+
                 return True
 
     return False
 
 
-def rule_prob(tl_open, tl_current, asian_current, over_open, over_current):
+def rule_prob(tl_open,tl_current,asian_current,over_open,over_current):
 
-    if tl_current >= 2.75 and tl_current >= tl_open:
+    if tl_current>=2.75 and tl_current>=tl_open:
 
-        if abs(asian_current) >= 1:
+        if abs(asian_current)>=1:
             return True
 
-        if over_current < over_open:
+        if over_current<over_open:
             return True
 
     return False
 
 
-def rule_r10(tl_open, tl_current, asian_open, asian_current, over_open, over_current):
+def rule_r10(tl_open,tl_current,asian_open,asian_current,over_open,over_current):
 
-    if tl_current >= 3 and tl_current >= tl_open:
+    if tl_current>=3 and tl_current>=tl_open:
 
-        if abs(asian_current) >= 0.75 and abs(asian_open) >= 1:
+        if abs(asian_current)>=0.75 and abs(asian_open)>=1:
             return True
 
-        if over_current < over_open:
+        if over_current<over_open:
             return True
 
     return False
@@ -197,54 +252,51 @@ while True:
 
     try:
 
-        live_matches = get_live_matches()
-        asian_rows = get_asianodds()
+        live=get_live_matches()
 
-        asian_map = {r["key"]: r for r in asian_rows}
+        asian=get_asian()
 
-        for match in live_matches:
+        for match in live:
 
-            key = match["key"]
-
-            if key not in asian_map:
+            if match["id"] in sent_matches:
                 continue
 
-            if key in sent_matches:
+            odds=match_row(match,asian)
+
+            if not odds:
                 continue
 
-            odds = asian_map[key]
-
-            r8 = rule_r8(
-                odds["tl_open"],
-                odds["tl_current"],
-                odds["asian_open"],
-                odds["asian_current"],
-                odds["over_open"],
-                odds["over_current"]
+            r8=rule_r8(
+            odds["tl_open"],
+            odds["tl_current"],
+            odds["asian_open"],
+            odds["asian_current"],
+            odds["over_open"],
+            odds["over_current"]
             )
 
-            prob = rule_prob(
-                odds["tl_open"],
-                odds["tl_current"],
-                odds["asian_current"],
-                odds["over_open"],
-                odds["over_current"]
+            prob=rule_prob(
+            odds["tl_open"],
+            odds["tl_current"],
+            odds["asian_current"],
+            odds["over_open"],
+            odds["over_current"]
             )
 
-            r10 = rule_r10(
-                odds["tl_open"],
-                odds["tl_current"],
-                odds["asian_open"],
-                odds["asian_current"],
-                odds["over_open"],
-                odds["over_current"]
+            r10=rule_r10(
+            odds["tl_open"],
+            odds["tl_current"],
+            odds["asian_open"],
+            odds["asian_current"],
+            odds["over_open"],
+            odds["over_current"]
             )
 
             if r8 or prob or r10:
 
-                regola = "R8" if r8 else "PROB" if prob else "R10"
+                rule="R8" if r8 else "PROB" if prob else "R10"
 
-                msg = f"""
+                msg=f"""
 🔥 ASIAN SETUP
 
 {match["home"]} vs {match["away"]}
@@ -261,17 +313,17 @@ Asian current: {odds["asian_current"]}
 Over open: {odds["over_open"]}
 Over current: {odds["over_current"]}
 
-Regola: {regola}
+Rule: {rule}
 """
 
                 send(msg)
 
-                sent_matches.add(key)
+                sent_matches.add(match["id"])
 
         time.sleep(60)
 
     except Exception as e:
 
-        print("ERRORE:", e)
+        print("ERROR",e)
 
         time.sleep(60)
