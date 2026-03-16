@@ -47,7 +47,7 @@ def check_goal_first_half(match_id, home, away):
 
         if (home_score > 0 or away_score > 0) and match_id not in goal_sent:
 
-            send(f"""✅ GOAL FIRST HALF
+            send(f"""✅ OVER 0.5 HT PRESO
 
 {home} vs {away}
 
@@ -72,14 +72,21 @@ def check_ht_result(match_id, home, away):
 
         data = r.json()
 
-        status = data["event"]["status"]["type"]
+        home_ht = data["event"]["homeScore"]["period1"]
+        away_ht = data["event"]["awayScore"]["period1"]
 
-        if status == "inprogress":
+        if home_ht is not None:
 
-            home_ht = data["event"]["homeScore"]["period1"]
-            away_ht = data["event"]["awayScore"]["period1"]
+            if home_ht == 0 and away_ht == 0:
 
-            if home_ht is not None:
+                send(f"""❌ OVER 0.5 HT NON ENTRATO
+
+{home} vs {away}
+
+HT Score: {home_ht}-{away_ht}
+""")
+
+            else:
 
                 send(f"""⏱ HT RESULT
 
@@ -88,7 +95,7 @@ def check_ht_result(match_id, home, away):
 HT Score: {home_ht}-{away_ht}
 """)
 
-                return True
+            return True
 
     except:
         pass
@@ -123,7 +130,7 @@ while True:
                 minute = m.get("time", {}).get("current", 0)
 
                 home_score = m["homeScore"]["current"]
-                away_score = m["homeScore"]["current"]
+                away_score = m["awayScore"]["current"]
 
                 red_home = m.get("homeRedCards", 0)
                 red_away = m.get("awayRedCards", 0)
