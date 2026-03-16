@@ -8,248 +8,320 @@ CHAT_ID = "178689360"
 
 LIVE_URL = "https://api.sofascore.com/api/v1/sport/football/events/live"
 EVENT_URL = "https://api.sofascore.com/api/v1/event/"
+STATS_URL = "https://api.sofascore.com/api/v1/event/{}/statistics"
+
 TZ = ZoneInfo("Europe/Rome")
 
-sent_matches = set()
-tracked_matches = {}
-goal_sent = set()
-resolved_matches = set()
+sent_matches=set()
+tracked_matches=set()
+resolved=set()
 
-daily_stats = {
-    "analysed": 0,
-    "discarded": 0,
-    "setups": 0,
-    "wins": 0,
-    "losses": 0,
+daily={
+"analysed":0,
+"discarded":0,
+"setups":0,
+"wins":0,
+"losses":0
 }
-current_day = datetime.now(TZ).date()
+
+current_day=datetime.now(TZ).date()
 
 
 def send(msg):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
+    url=f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
     try:
-        requests.post(
-            url,
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=20
-        )
-    except Exception:
+        requests.post(url,data={"chat_id":CHAT_ID,"text":msg},timeout=20)
+    except:
         pass
 
 
-def get_live_matches():
+def get_live():
+
     try:
-        r = requests.get(LIVE_URL, timeout=20)
-        data = r.json()
-        return data.get("events", [])
-    except Exception:
+        r=requests.get(LIVE_URL,timeout=20)
+        return r.json()["events"]
+    except:
         return []
 
 
-def event_data(match_id):
+def get_event(id):
+
     try:
-        r = requests.get(f"{EVENT_URL}{match_id}", timeout=20)
-        return r.json().get("event", {})
-    except Exception:
+        r=requests.get(EVENT_URL+str(id),timeout=20)
+        return r.json()["event"]
+    except:
         return {}
 
 
-def send_daily_report(report_date):
-    wins = daily_stats["wins"]
-    losses = daily_stats["losses"]
-    total_results = wins + losses
-    strike = round((wins / total_results) * 100, 1) if total_results > 0 else 0.0
+def get_stats(id):
 
-    msg = f"""📊 REPORT GIORNALIERO
+    try:
 
-Data: {report_date}
+        r=requests.get(STATS_URL.format(id),timeout=20)
 
-Partite analizzate: {daily_stats["analysed"]}
-Partite scartate: {daily_stats["discarded"]}
-Setup trovati: {daily_stats["setups"]}
+        data=r.json()
 
-✅ Vinte: {wins}
-❌ Perse: {losses}
+        attacks=0
+        shots=0
+        corners=0
 
-Percentuale successo Over HT: {strike}%
-"""
-    send(msg)
+        for g in data.get("statistics",[]):
+
+            for group in g.get("groups",[]):
+
+                for s in group.get("statisticsItems",[]):
+
+                    name=s.get("name","").lower()
+
+                    if "dangerous attacks" in name:
+
+                        attacks=int(s["home"])+int(s["away"])
+
+                    if "shots on target" in name:
+
+                        shots=int(s["home"])+int(s["away"])
+
+                    if "corner" in name:
+
+                        corners=int(s["home"])+int(s["away"])
+
+        return attacks,shots,corners
+
+    except:
+
+        return 0,0,0
 
 
-def reset_daily_stats():
-    daily_stats["analysed"] = 0
-    daily_stats["discarded"] = 0
-    daily_stats["setups"] = 0
-    daily_stats["wins"] = 0
-    daily_stats["losses"] = 0
+def report():
+
+    wins=daily["wins"]
+    losses=daily["losses"]
+
+    total=wins+losses
+
+    strike=round((wins/total)*100,1) if total>0 else 0
+
+    send(f"""
+📊 REPORT GIORNALIERO
+
+Analizzate {daily["analysed"]}
+Scartate {daily["discarded"]}
+Setup {daily["setups"]}
+
+✅ Vinte {wins}
+❌ Perse {losses}
+
+Successo {strike}%
+""")
 
 
-def maybe_rotate_daily_report():
+def rotate_day():
+
     global current_day
-    now_day = datetime.now(TZ).date()
 
-    if now_day != current_day:
-        send_daily_report(current_day)
-        reset_daily_stats()
-        current_day = now_day
+    today=datetime.now(TZ).date()
+
+    if today!=current_day:
+
+        report()
+
+        for k in daily:
+
+            daily[k]=0
+
+        current_day=today
 
 
-def check_goal_first_half(match_id, home, away):
-    data = event_data(match_id)
+def goal_check(id,home,away):
+
+    data=get_event(id)
+
     if not data:
         return
 
-    home_score = data.get("homeScore", {}).get("current", 0)
-    away_score = data.get("awayScore", {}).get("current", 0)
-    minute = data.get("time", {}).get("current", 0)
+    hs=data["homeScore"]["current"]
+    as_=data["awayScore"]["current"]
 
-    if (home_score > 0 or away_score > 0) and match_id not in goal_sent:
-        send(f"""✅ OVER 0.5 HT PRESO
+    minute=data.get("time",{}).get("current",0)
+
+    if hs>0 or as_>0:
+
+        send(f"""
+✅ OVER 0.5 HT PRESO
 
 {home} vs {away}
 
-Minute: {minute}
-Score: {home_score}-{away_score}
+Minute {minute}
+
+Score {hs}-{as_}
 """)
-        goal_sent.add(match_id)
 
 
-def check_ht_result(match_id, home, away):
-    if match_id in resolved_matches:
+def ht_check(id,home,away):
+
+    if id in resolved:
         return False
 
-    data = event_data(match_id)
+    data=get_event(id)
+
     if not data:
         return False
 
-    home_ht = data.get("homeScore", {}).get("period1")
-    away_ht = data.get("awayScore", {}).get("period1")
+    h=data["homeScore"].get("period1")
+    a=data["awayScore"].get("period1")
 
-    if home_ht is None or away_ht is None:
+    if h is None:
         return False
 
-    if home_ht == 0 and away_ht == 0:
-        send(f"""❌ OVER 0.5 HT PERSO
+    if h==0 and a==0:
+
+        send(f"""
+❌ OVER 0.5 HT PERSO
 
 {home} vs {away}
 
-HT Score: {home_ht}-{away_ht}
+HT {h}-{a}
 """)
-        daily_stats["losses"] += 1
+
+        daily["losses"]+=1
+
     else:
-        send(f"""⏱ HT RESULT
+
+        send(f"""
+⏱ HT RESULT
 
 {home} vs {away}
 
-HT Score: {home_ht}-{away_ht}
+HT {h}-{a}
 """)
-        daily_stats["wins"] += 1
 
-    resolved_matches.add(match_id)
+        daily["wins"]+=1
+
+    resolved.add(id)
+
     return True
 
 
-send("⚽ LIVE SCANNER ATTIVO")
+send("⚽ SCANNER LIVE ATTIVO")
+
 
 while True:
-    try:
-        maybe_rotate_daily_report()
 
-        matches = get_live_matches()
-        print("Partite live trovate:", len(matches))
+    try:
+
+        rotate_day()
+
+        matches=get_live()
+
+        print("Live trovate:",len(matches))
 
         for m in matches:
+
             try:
-                daily_stats["analysed"] += 1
 
-                match_id = m["id"]
-                home = m["homeTeam"]["name"]
-                away = m["awayTeam"]["name"]
-                league = m["tournament"]["name"]
-                league_low = league.lower()
+                daily["analysed"]+=1
 
-                if (
-                    "u17" in league_low
-                    or "u18" in league_low
-                    or "u19" in league_low
-                    or "u20" in league_low
-                    or "women" in league_low
-                ):
-                    daily_stats["discarded"] += 1
-                    print("SCARTATA categoria:", home, "vs", away)
+                id=m["id"]
+
+                home=m["homeTeam"]["name"]
+                away=m["awayTeam"]["name"]
+
+                league=m["tournament"]["name"].lower()
+
+                if "u17" in league or "u19" in league or "women" in league:
+
+                    daily["discarded"]+=1
+
                     continue
 
-                minute = m.get("time", {}).get("current", 0)
-                home_score = m["homeScore"]["current"]
-                away_score = m["awayScore"]["current"]
-                red_home = m.get("homeRedCards", 0)
-                red_away = m.get("awayRedCards", 0)
+                minute=m.get("time",{}).get("current",0)
 
-                stats_home = m.get("homeTeamStatistics", {})
-                stats_away = m.get("awayTeamStatistics", {})
+                hs=m["homeScore"]["current"]
+                aw=m["awayScore"]["current"]
 
-                home_att = stats_home.get("dangerousAttacks", 0)
-                away_att = stats_away.get("dangerousAttacks", 0)
-                home_shots = stats_home.get("shotsOnGoal", 0)
-                away_shots = stats_away.get("shotsOnGoal", 0)
+                if minute<21 or minute>45:
+                    continue
 
-                attacks = home_att + away_att
-                shots = home_shots + away_shots
+                if hs>0 or aw>0:
+                    continue
 
-                if minute >= 21:
-                    if home_score == 0 and away_score == 0:
-                        if red_home == 0 and red_away == 0:
-                            if attacks >= 20 or shots >= 2:
-                                if match_id not in sent_matches:
-                                    daily_stats["setups"] += 1
+                attacks,shots,corners=get_stats(id)
 
-                                    msg = f"""🔥 OVER 0.5 HT SETUP
+                # OVER HT
+
+                if attacks>=25 or shots>=2 or corners>=4:
+
+                    if id not in sent_matches:
+
+                        daily["setups"]+=1
+
+                        send(f"""
+🔥 OVER 0.5 HT SETUP
 
 {home} vs {away}
 
-League: {league}
-Minute: {minute}
+Minute {minute}
 
-Dangerous Attacks: {attacks}
-Shots on Target: {shots}
-"""
-                                    send(msg)
-                                    print("SETUP TROVATO:", home, "vs", away)
+Attacks {attacks}
+Shots {shots}
+Corners {corners}
+""")
 
-                                    sent_matches.add(match_id)
-                                    tracked_matches[match_id] = (home, away)
-                            else:
-                                daily_stats["discarded"] += 1
-                                print("SCARTATA stats:", home, "vs", away, "attacks", attacks, "shots", shots)
+                        sent_matches.add(id)
 
-                if match_id in tracked_matches:
-                    home_tr, away_tr = tracked_matches[match_id]
+                        tracked_matches.add(id)
 
-                    if minute <= 45:
-                        check_goal_first_half(match_id, home_tr, away_tr)
+                # GOAL IMMINENTE
 
-                    if minute >= 46:
-                        if check_ht_result(match_id, home_tr, away_tr):
-                            tracked_matches.pop(match_id, None)
+                if attacks>=45 and shots>=4:
 
-            except Exception:
+                    send(f"""
+⚡ GOAL IMMINENTE
+
+{home} vs {away}
+
+Minute {minute}
+
+Attacks {attacks}
+Shots {shots}
+Corners {corners}
+""")
+
+                if id in tracked_matches:
+
+                    if minute<=45:
+
+                        goal_check(id,home,away)
+
+                    if minute>=46:
+
+                        if ht_check(id,home,away):
+
+                            tracked_matches.remove(id)
+
+            except:
                 continue
 
-        wins = daily_stats["wins"]
-        losses = daily_stats["losses"]
-        total_results = wins + losses
-        strike = round((wins / total_results) * 100, 1) if total_results > 0 else 0.0
+        wins=daily["wins"]
+        losses=daily["losses"]
+
+        total=wins+losses
+
+        strike=round((wins/total)*100,1) if total>0 else 0
 
         print("----- REPORT -----")
-        print("Analizzate:", daily_stats["analysed"])
-        print("Scartate:", daily_stats["discarded"])
-        print("Setup trovati:", daily_stats["setups"])
-        print("Vinte:", wins)
-        print("Perse:", losses)
-        print("Successo Over HT:", f"{strike}%")
+        print("Analizzate",daily["analysed"])
+        print("Scartate",daily["discarded"])
+        print("Setup",daily["setups"])
+        print("Vinte",wins)
+        print("Perse",losses)
+        print("Successo",strike,"%")
         print("------------------")
 
         time.sleep(60)
 
-    except Exception:
+    except:
+
         time.sleep(60)
