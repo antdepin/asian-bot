@@ -128,7 +128,6 @@ def rotate_day():
         report()
 
         for k in daily:
-
             daily[k]=0
 
         current_day=today
@@ -233,7 +232,6 @@ while True:
                 if "u17" in league or "u19" in league or "women" in league:
 
                     daily["discarded"]+=1
-
                     continue
 
                 minute=m.get("time",{}).get("current",0)
@@ -241,7 +239,8 @@ while True:
                 hs=m["homeScore"]["current"]
                 aw=m["awayScore"]["current"]
 
-                if minute<21 or minute>45:
+                # nuova finestra minuti
+                if minute<18 or minute>45:
                     continue
 
                 if hs>0 or aw>0:
@@ -249,9 +248,8 @@ while True:
 
                 attacks,shots,corners=get_stats(id)
 
-                # OVER HT
-
-                if attacks>=25 or shots>=2 or corners>=4:
+                # filtro migliorato
+                if attacks>=18 or shots>=2 or corners>=3:
 
                     if id not in sent_matches:
 
@@ -273,9 +271,8 @@ Corners {corners}
 
                         tracked_matches.add(id)
 
-                # GOAL IMMINENTE
-
-                if attacks>=45 and shots>=4:
+                # goal imminente
+                if attacks>=40 and shots>=4:
 
                     send(f"""
 ⚡ GOAL IMMINENTE
