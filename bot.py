@@ -1,329 +1,150 @@
 import requests
 import time
-import re
-import unicodedata
-from difflib import SequenceMatcher
-from playwright.sync_api import sync_playwright
-
-print("BOT DOCKER PARTITO")
 
 TOKEN = "1292804066:AAHIGsAOWz3vBXF4RJBnnQGH9m2UgNfJhek"
 CHAT_ID = "178689360"
 
-SOFASCORE_URL = "https://api.sofascore.com/api/v1/sport/football/events/live"
-ASIANODDS_URL = "https://www.asianodds.com/en/football/live"
+LIVE_URL = "https://api.sofascore.com/api/v1/sport/football/events/live"
+EVENT_URL = "https://api.sofascore.com/api/v1/event/"
 
 sent_matches = set()
+tracked_matches = {}
 
-BAD_LEAGUES = [
-"u17","u18","u19","u20","u21",
-"women","ladies","friendly",
-"youth","reserve"
-]
-
-TEAM_ALIASES = {
-"utd":"united",
-"man utd":"manchester united",
-"man united":"manchester united",
-"psg":"paris saint germain",
-"fc":"",
-"sc":"",
-"ac":"",
-"cd":""
-}
 
 def send(msg):
 
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-    try:
-        requests.post(url,data={"chat_id":CHAT_ID,"text":msg},timeout=20)
-    except:
-        pass
-
-
-def normalize(text):
-
-    text = unicodedata.normalize("NFKD",text).encode("ascii","ignore").decode("ascii")
-    text = text.lower()
-
-    for old,new in TEAM_ALIASES.items():
-        text = text.replace(old,new)
-
-    text = re.sub(r"[^a-z0-9\s]"," ",text)
-    text = re.sub(r"\s+"," ",text)
-
-    return text.strip()
-
-
-def similarity(a,b):
-
-    return SequenceMatcher(None,a,b).ratio()
+    requests.post(
+        url,
+        data={
+            "chat_id": CHAT_ID,
+            "text": msg
+        }
+    )
 
 
 def get_live_matches():
 
-    matches=[]
+    r = requests.get(LIVE_URL)
 
-    r=requests.get(SOFASCORE_URL)
-    data=r.json()
+    data = r.json()
 
-    for e in data["events"]:
-
-        try:
-
-            league=e["tournament"]["name"]
-
-            if any(x in normalize(league) for x in BAD_LEAGUES):
-                continue
-
-            home=e["homeTeam"]["name"]
-            away=e["awayTeam"]["name"]
-
-            minute=int(e.get("time",{}).get("current",0))
-
-            hs=e["homeScore"]["current"]
-            ascore=e["awayScore"]["current"]
-
-            red_home=int(e.get("homeRedCards",0))
-            red_away=int(e.get("awayRedCards",0))
-
-            if minute < 21:
-                continue
-
-            if hs!=0 or ascore!=0:
-                continue
-
-            if red_home!=0 or red_away!=0:
-                continue
-
-            matches.append({
-
-                "id":e["id"],
-                "home":home,
-                "away":away,
-                "league":league,
-                "minute":minute,
-                "home_n":normalize(home),
-                "away_n":normalize(away)
-
-            })
-
-        except:
-            continue
-
-    return matches
+    return data["events"]
 
 
-def extract_numbers(text):
+def check_goal_first_half(match_id, home, away):
 
-    nums=re.findall(r"-?\d+\.?\d*",text)
+    url = f"{EVENT_URL}{match_id}"
 
-    return [float(x) for x in nums]
+    try:
 
+        r = requests.get(url)
 
-def get_asian():
+        data = r.json()
 
-    rows=[]
+        home_score = data["event"]["homeScore"]["current"]
+        away_score = data["event"]["awayScore"]["current"]
 
-    with sync_playwright() as p:
+        if home_score > 0 or away_score > 0:
 
-        browser=p.chromium.launch(headless=True)
+            send(f"✅ GOAL FIRST HALF\n\n{home} vs {away}")
 
-        page=browser.new_page()
+            return True
 
-        page.goto(ASIANODDS_URL)
-
-        page.wait_for_timeout(8000)
-
-        body=page.locator("body").inner_text()
-
-        browser.close()
-
-    lines=body.split("\n")
-
-    for i,line in enumerate(lines):
-
-        if " vs " not in line.lower():
-            continue
-
-        try:
-
-            home,away=line.split(" vs ")
-
-            nums=extract_numbers(" ".join(lines[i:i+10]))
-
-            if len(nums) < 6:
-                continue
-
-            rows.append({
-
-            "home":home,
-            "away":away,
-
-            "home_n":normalize(home),
-            "away_n":normalize(away),
-
-            "asian_open":nums[0],
-            "asian_current":nums[1],
-
-            "tl_open":nums[2],
-            "tl_current":nums[3],
-
-            "over_open":nums[4],
-            "over_current":nums[5]
-
-            })
-
-        except:
-            continue
-
-    return rows
-
-
-def match_row(match,rows):
-
-    best=None
-    best_score=0
-
-    for r in rows:
-
-        s1=similarity(match["home_n"],r["home_n"])
-        s2=similarity(match["away_n"],r["away_n"])
-
-        score=(s1+s2)/2
-
-        if score>best_score:
-
-            best_score=score
-            best=r
-
-    if best_score>0.7:
-        return best
-
-    return None
-
-
-def rule_r8(tl_open,tl_current,asian_open,asian_current,over_open,over_current):
-
-    if tl_open>=3 and tl_current>=tl_open:
-
-        if abs(asian_open)>=1 and abs(asian_current)>=abs(asian_open):
-
-            if over_current<over_open:
-
-                return True
+    except:
+        pass
 
     return False
 
 
-def rule_prob(tl_open,tl_current,asian_current,over_open,over_current):
-
-    if tl_current>=2.75 and tl_current>=tl_open:
-
-        if abs(asian_current)>=1:
-            return True
-
-        if over_current<over_open:
-            return True
-
-    return False
-
-
-def rule_r10(tl_open,tl_current,asian_open,asian_current,over_open,over_current):
-
-    if tl_current>=3 and tl_current>=tl_open:
-
-        if abs(asian_current)>=0.75 and abs(asian_open)>=1:
-            return True
-
-        if over_current<over_open:
-            return True
-
-    return False
-
-
-print("BOT PARTITO")
-
-send("⚽ Asian Scanner attivo")
+send("⚽ LIVE SCANNER ATTIVO")
 
 
 while True:
 
     try:
 
-        live=get_live_matches()
+        matches = get_live_matches()
 
-        asian=get_asian()
+        for m in matches:
 
-        for match in live:
+            try:
 
-            if match["id"] in sent_matches:
-                continue
+                match_id = m["id"]
 
-            odds=match_row(match,asian)
+                home = m["homeTeam"]["name"]
+                away = m["awayTeam"]["name"]
 
-            if not odds:
-                continue
+                league = m["tournament"]["name"]
 
-            r8=rule_r8(
-            odds["tl_open"],
-            odds["tl_current"],
-            odds["asian_open"],
-            odds["asian_current"],
-            odds["over_open"],
-            odds["over_current"]
-            )
+                league_low = league.lower()
 
-            prob=rule_prob(
-            odds["tl_open"],
-            odds["tl_current"],
-            odds["asian_current"],
-            odds["over_open"],
-            odds["over_current"]
-            )
+                if "u17" in league_low or "u19" in league_low or "women" in league_low:
+                    continue
 
-            r10=rule_r10(
-            odds["tl_open"],
-            odds["tl_current"],
-            odds["asian_open"],
-            odds["asian_current"],
-            odds["over_open"],
-            odds["over_current"]
-            )
+                minute = m.get("time", {}).get("current", 0)
 
-            if r8 or prob or r10:
+                home_score = m["homeScore"]["current"]
+                away_score = m["awayScore"]["current"]
 
-                rule="R8" if r8 else "PROB" if prob else "R10"
+                red_home = m.get("homeRedCards", 0)
+                red_away = m.get("awayRedCards", 0)
 
-                msg=f"""
-🔥 ASIAN SETUP
+                stats_home = m.get("homeTeamStatistics", {})
+                stats_away = m.get("awayTeamStatistics", {})
 
-{match["home"]} vs {match["away"]}
+                home_att = stats_home.get("dangerousAttacks", 0)
+                away_att = stats_away.get("dangerousAttacks", 0)
 
-Minute: {match["minute"]}
-League: {match["league"]}
+                home_shots = stats_home.get("shotsOnGoal", 0)
+                away_shots = stats_away.get("shotsOnGoal", 0)
 
-TL open: {odds["tl_open"]}
-TL current: {odds["tl_current"]}
+                attacks = home_att + away_att
+                shots = home_shots + away_shots
 
-Asian open: {odds["asian_open"]}
-Asian current: {odds["asian_current"]}
+                if minute >= 21:
 
-Over open: {odds["over_open"]}
-Over current: {odds["over_current"]}
+                    if home_score == 0 and away_score == 0:
 
-Rule: {rule}
+                        if red_home == 0 and red_away == 0:
+
+                            if attacks >= 35 and shots >= 3:
+
+                                if match_id not in sent_matches:
+
+                                    message = f"""
+🔥 OVER 0.5 HT SETUP
+
+{home} vs {away}
+
+League: {league}
+
+Minute: {minute}
+
+Dangerous Attacks: {attacks}
+Shots on Target: {shots}
 """
 
-                send(msg)
+                                    send(message)
 
-                sent_matches.add(match["id"])
+                                    sent_matches.add(match_id)
+
+                                    tracked_matches[match_id] = (home, away)
+
+                if match_id in tracked_matches:
+
+                    if minute <= 45:
+
+                        home_tr, away_tr = tracked_matches[match_id]
+
+                        check_goal_first_half(match_id, home_tr, away_tr)
+
+            except:
+                continue
 
         time.sleep(60)
 
-    except Exception as e:
-
-        print("ERROR",e)
+    except:
 
         time.sleep(60)
