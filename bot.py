@@ -42,6 +42,7 @@ def team_key(home, away):
 
 
 def get_live_matches():
+    
 
     r = requests.get(SOFASCORE_URL)
     data = r.json()
