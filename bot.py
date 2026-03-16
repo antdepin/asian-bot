@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 print("BOT DOCKER PARTITO")
 
 # LASCIA QUI IL TUO TOKEN
-TOKEN = "METTI_IL_TUO_TOKEN"
+TOKEN = "1292804066:AAHIGsAOWz3vBXF4RJBnnQGH9m2UgNfJhek"
 CHAT_ID = "178689360"
 
 SOFASCORE_URL = "https://api.sofascore.com/api/v1/sport/football/events/live"
