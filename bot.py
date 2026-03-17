@@ -26,41 +26,30 @@ daily={
 
 current_day=datetime.now(TZ).date()
 
-
 def send(msg):
-
     url=f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-
     try:
         requests.post(url,data={"chat_id":CHAT_ID,"text":msg},timeout=20)
     except:
         pass
 
-
 def get_live():
-
     try:
         r=requests.get(LIVE_URL,timeout=20)
         return r.json()["events"]
     except:
         return []
 
-
 def get_event(id):
-
     try:
         r=requests.get(EVENT_URL+str(id),timeout=20)
         return r.json()["event"]
     except:
         return {}
 
-
 def get_stats(id):
-
     try:
-
         r=requests.get(STATS_URL.format(id),timeout=20)
-
         data=r.json()
 
         attacks=0
@@ -68,39 +57,29 @@ def get_stats(id):
         corners=0
 
         for g in data.get("statistics",[]):
-
             for group in g.get("groups",[]):
-
                 for s in group.get("statisticsItems",[]):
 
                     name=s.get("name","").lower()
 
                     if "dangerous attacks" in name:
-
                         attacks=int(s["home"])+int(s["away"])
 
                     if "shots on target" in name:
-
                         shots=int(s["home"])+int(s["away"])
 
                     if "corner" in name:
-
                         corners=int(s["home"])+int(s["away"])
 
         return attacks,shots,corners
 
     except:
-
         return 0,0,0
 
-
 def report():
-
     wins=daily["wins"]
     losses=daily["losses"]
-
     total=wins+losses
-
     strike=round((wins/total)*100,1) if total>0 else 0
 
     send(f"""
@@ -116,37 +95,26 @@ Setup {daily["setups"]}
 Successo {strike}%
 """)
 
-
 def rotate_day():
-
     global current_day
-
     today=datetime.now(TZ).date()
 
     if today!=current_day:
-
         report()
-
         for k in daily:
             daily[k]=0
-
         current_day=today
 
-
 def goal_check(id,home,away):
-
     data=get_event(id)
-
     if not data:
         return
 
     hs=data["homeScore"]["current"]
-    as_=data["awayScore"]["current"]
-
+    aw=data["awayScore"]["current"]
     minute=data.get("time",{}).get("current",0)
 
-    if hs>0 or as_>0:
-
+    if hs>0 or aw>0:
         send(f"""
 ✅ OVER 0.5 HT PRESO
 
@@ -154,17 +122,14 @@ def goal_check(id,home,away):
 
 Minute {minute}
 
-Score {hs}-{as_}
+Score {hs}-{aw}
 """)
 
-
 def ht_check(id,home,away):
-
     if id in resolved:
         return False
 
     data=get_event(id)
-
     if not data:
         return False
 
@@ -175,7 +140,6 @@ def ht_check(id,home,away):
         return False
 
     if h==0 and a==0:
-
         send(f"""
 ❌ OVER 0.5 HT PERSO
 
@@ -183,11 +147,8 @@ def ht_check(id,home,away):
 
 HT {h}-{a}
 """)
-
         daily["losses"]+=1
-
     else:
-
         send(f"""
 ⏱ HT RESULT
 
@@ -195,42 +156,31 @@ HT {h}-{a}
 
 HT {h}-{a}
 """)
-
         daily["wins"]+=1
 
     resolved.add(id)
-
     return True
-
 
 send("⚽ SCANNER LIVE ATTIVO")
 
-
 while True:
-
     try:
-
         rotate_day()
-
         matches=get_live()
 
         print("Live trovate:",len(matches))
 
         for m in matches:
-
             try:
-
                 daily["analysed"]+=1
 
                 id=m["id"]
-
                 home=m["homeTeam"]["name"]
                 away=m["awayTeam"]["name"]
 
                 league=m["tournament"]["name"].lower()
 
                 if "u17" in league or "u19" in league or "women" in league:
-
                     daily["discarded"]+=1
                     continue
 
@@ -239,17 +189,25 @@ while True:
                 hs=m["homeScore"]["current"]
                 aw=m["awayScore"]["current"]
 
-                # nuova finestra minuti
                 if minute<18 or minute>45:
                     continue
 
                 if hs>0 or aw>0:
                     continue
 
+                # 🔥 STATISTICHE
                 attacks,shots,corners=get_stats(id)
 
-                # filtro migliorato
-                if attacks>=18 or shots>=2 or corners>=3:
+                # 🔥 FIX FONDAMENTALE (fallback)
+                if attacks == 0 and shots == 0:
+                    stats_home = m.get("homeTeamStatistics", {})
+                    stats_away = m.get("awayTeamStatistics", {})
+
+                    attacks = stats_home.get("dangerousAttacks", 0) + stats_away.get("dangerousAttacks", 0)
+                    shots = stats_home.get("shotsOnGoal", 0) + stats_away.get("shotsOnGoal", 0)
+
+                # 🔥 FILTRO SBLOCCATO
+                if attacks>=15 or shots>=1 or corners>=2:
 
                     if id not in sent_matches:
 
@@ -268,12 +226,10 @@ Corners {corners}
 """)
 
                         sent_matches.add(id)
-
                         tracked_matches.add(id)
 
-                # goal imminente
-                if attacks>=40 and shots>=4:
-
+                # 🚀 GOAL IMMINENTE
+                if attacks>=35 and shots>=3:
                     send(f"""
 ⚡ GOAL IMMINENTE
 
@@ -289,13 +245,10 @@ Corners {corners}
                 if id in tracked_matches:
 
                     if minute<=45:
-
                         goal_check(id,home,away)
 
                     if minute>=46:
-
                         if ht_check(id,home,away):
-
                             tracked_matches.remove(id)
 
             except:
@@ -303,9 +256,7 @@ Corners {corners}
 
         wins=daily["wins"]
         losses=daily["losses"]
-
         total=wins+losses
-
         strike=round((wins/total)*100,1) if total>0 else 0
 
         print("----- REPORT -----")
@@ -320,5 +271,4 @@ Corners {corners}
         time.sleep(60)
 
     except:
-
         time.sleep(60)
