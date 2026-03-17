@@ -1,272 +1,110 @@
 import requests
 import time
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from bs4 import BeautifulSoup
 
-TOKEN = "1292804066:AAHIGsAOWz3vBXF4RJBnnQGH9m2UgNfJhek"
-CHAT_ID = "178689360"
+TOKEN = "TUO_TOKEN"
+CHAT_ID = "TUO_CHAT_ID"
 
-LIVE_URL = "https://api.sofascore.com/api/v1/sport/football/events/live"
-EVENT_URL = "https://api.sofascore.com/api/v1/event/"
-STATS_URL = "https://api.sofascore.com/api/v1/event/{}/statistics"
+URL = "https://www.nowgoal.com/football/live"
 
-TZ = ZoneInfo("Europe/Rome")
+sent = set()
 
-sent_matches=set()
-tracked_matches=set()
-resolved=set()
-
-daily={
-"analysed":0,
-"discarded":0,
-"setups":0,
-"wins":0,
-"losses":0
-}
-
-current_day=datetime.now(TZ).date()
 
 def send(msg):
-    url=f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    try:
-        requests.post(url,data={"chat_id":CHAT_ID,"text":msg},timeout=20)
-    except:
-        pass
+    requests.post(
+        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+        data={"chat_id": CHAT_ID, "text": msg}
+    )
 
-def get_live():
-    try:
-        r=requests.get(LIVE_URL,timeout=20)
-        return r.json()["events"]
-    except:
-        return []
 
-def get_event(id):
-    try:
-        r=requests.get(EVENT_URL+str(id),timeout=20)
-        return r.json()["event"]
-    except:
-        return {}
+def get_html():
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+    r = requests.get(URL, headers=headers)
+    return r.text
 
-def get_stats(id):
-    try:
-        r=requests.get(STATS_URL.format(id),timeout=20)
-        data=r.json()
 
-        attacks=0
-        shots=0
-        corners=0
+def parse_matches(html):
+    soup = BeautifulSoup(html, "html.parser")
 
-        for g in data.get("statistics",[]):
-            for group in g.get("groups",[]):
-                for s in group.get("statisticsItems",[]):
+    matches = []
 
-                    name=s.get("name","").lower()
+    rows = soup.select("tr")  # NowGoal usa tabelle
 
-                    if "dangerous attacks" in name:
-                        attacks=int(s["home"])+int(s["away"])
+    for r in rows:
+        try:
+            text = r.get_text(" ", strip=True)
 
-                    if "shots on target" in name:
-                        shots=int(s["home"])+int(s["away"])
+            # filtro base
+            if "-" not in text:
+                continue
 
-                    if "corner" in name:
-                        corners=int(s["home"])+int(s["away"])
+            # esempio parsing semplice (adattabile)
+            parts = text.split()
 
-        return attacks,shots,corners
+            # prova a prendere squadre
+            home = parts[1]
+            away = parts[3]
 
-    except:
-        return 0,0,0
+            score = parts[0]
 
-def report():
-    wins=daily["wins"]
-    losses=daily["losses"]
-    total=wins+losses
-    strike=round((wins/total)*100,1) if total>0 else 0
+            if score != "0-0":
+                continue
 
-    send(f"""
-📊 REPORT GIORNALIERO
+            # minuto (NowGoal lo mette nella riga)
+            minute = None
+            for p in parts:
+                if "'" in p:
+                    minute = int(p.replace("'", ""))
+                    break
 
-Analizzate {daily["analysed"]}
-Scartate {daily["discarded"]}
-Setup {daily["setups"]}
+            if not minute or minute < 20:
+                continue
 
-✅ Vinte {wins}
-❌ Perse {losses}
+            match_id = home + away
 
-Successo {strike}%
-""")
+            matches.append({
+                "id": match_id,
+                "home": home,
+                "away": away,
+                "minute": minute,
+                "raw": text
+            })
 
-def rotate_day():
-    global current_day
-    today=datetime.now(TZ).date()
+        except:
+            continue
 
-    if today!=current_day:
-        report()
-        for k in daily:
-            daily[k]=0
-        current_day=today
+    return matches
 
-def goal_check(id,home,away):
-    data=get_event(id)
-    if not data:
-        return
 
-    hs=data["homeScore"]["current"]
-    aw=data["awayScore"]["current"]
-    minute=data.get("time",{}).get("current",0)
+send("🚀 NOWGOAL BOT ATTIVO")
 
-    if hs>0 or aw>0:
-        send(f"""
-✅ OVER 0.5 HT PRESO
-
-{home} vs {away}
-
-Minute {minute}
-
-Score {hs}-{aw}
-""")
-
-def ht_check(id,home,away):
-    if id in resolved:
-        return False
-
-    data=get_event(id)
-    if not data:
-        return False
-
-    h=data["homeScore"].get("period1")
-    a=data["awayScore"].get("period1")
-
-    if h is None:
-        return False
-
-    if h==0 and a==0:
-        send(f"""
-❌ OVER 0.5 HT PERSO
-
-{home} vs {away}
-
-HT {h}-{a}
-""")
-        daily["losses"]+=1
-    else:
-        send(f"""
-⏱ HT RESULT
-
-{home} vs {away}
-
-HT {h}-{a}
-""")
-        daily["wins"]+=1
-
-    resolved.add(id)
-    return True
-
-send("⚽ SCANNER LIVE ATTIVO")
 
 while True:
     try:
-        rotate_day()
-        matches=get_live()
-
-        print("Live trovate:",len(matches))
+        html = get_html()
+        matches = parse_matches(html)
 
         for m in matches:
-            try:
-                daily["analysed"]+=1
 
-                id=m["id"]
-                home=m["homeTeam"]["name"]
-                away=m["awayTeam"]["name"]
-
-                league=m["tournament"]["name"].lower()
-
-                if "u17" in league or "u19" in league or "women" in league:
-                    daily["discarded"]+=1
-                    continue
-
-                minute=m.get("time",{}).get("current",0)
-
-                hs=m["homeScore"]["current"]
-                aw=m["awayScore"]["current"]
-
-                if minute<18 or minute>45:
-                    continue
-
-                if hs>0 or aw>0:
-                    continue
-
-                # 🔥 STATISTICHE
-                attacks,shots,corners=get_stats(id)
-
-                # 🔥 FIX FONDAMENTALE (fallback)
-                if attacks == 0 and shots == 0:
-                    stats_home = m.get("homeTeamStatistics", {})
-                    stats_away = m.get("awayTeamStatistics", {})
-
-                    attacks = stats_home.get("dangerousAttacks", 0) + stats_away.get("dangerousAttacks", 0)
-                    shots = stats_home.get("shotsOnGoal", 0) + stats_away.get("shotsOnGoal", 0)
-
-                # 🔥 FILTRO SBLOCCATO
-                if attacks>=15 or shots>=1 or corners>=2:
-
-                    if id not in sent_matches:
-
-                        daily["setups"]+=1
-
-                        send(f"""
-🔥 OVER 0.5 HT SETUP
-
-{home} vs {away}
-
-Minute {minute}
-
-Attacks {attacks}
-Shots {shots}
-Corners {corners}
-""")
-
-                        sent_matches.add(id)
-                        tracked_matches.add(id)
-
-                # 🚀 GOAL IMMINENTE
-                if attacks>=35 and shots>=3:
-                    send(f"""
-⚡ GOAL IMMINENTE
-
-{home} vs {away}
-
-Minute {minute}
-
-Attacks {attacks}
-Shots {shots}
-Corners {corners}
-""")
-
-                if id in tracked_matches:
-
-                    if minute<=45:
-                        goal_check(id,home,away)
-
-                    if minute>=46:
-                        if ht_check(id,home,away):
-                            tracked_matches.remove(id)
-
-            except:
+            if m["id"] in sent:
                 continue
 
-        wins=daily["wins"]
-        losses=daily["losses"]
-        total=wins+losses
-        strike=round((wins/total)*100,1) if total>0 else 0
+            # 🔥 QUI PUOI METTERE LE 3 REGOLE (placeholder ora)
 
-        print("----- REPORT -----")
-        print("Analizzate",daily["analysed"])
-        print("Scartate",daily["discarded"])
-        print("Setup",daily["setups"])
-        print("Vinte",wins)
-        print("Perse",losses)
-        print("Successo",strike,"%")
-        print("------------------")
+            msg = f"""
+🔥 MATCH LIVE
+
+{m['home']} vs {m['away']}
+
+Minuto: {m['minute']}
+
+0-0 live → candidato
+"""
+
+            send(msg)
+            sent.add(m["id"])
 
         time.sleep(60)
 
