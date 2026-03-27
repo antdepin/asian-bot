@@ -246,4 +246,4 @@ while True:
             run_bot()
             last_run_day = now.date()
 
-    time.sleep(20)
+    time.sleep(20) 😘
